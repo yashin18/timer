@@ -1,64 +1,70 @@
-const WebSocket = require("ws");
+const WebSocket = require("ws"); 
 const http = require("http");
 
 const server = http.createServer((req, res) => {
-    res.writeHead(200, {
-        "Content-Type": "text/plain",
-        "Access-Control-Allow-Origin": "*"
-    });
+    res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("WebSocket server is running.");
 });
 
 const wss = new WebSocket.Server({ server });
 
-let timeRemaining = 0;
-let isRunning = false;
-let interval = null;
+let timers = {
+    1: { timeRemaining: 0, interval: null },
+    2: { timeRemaining: 0, interval: null }
+};
 
-wss.on("connection", (ws) => {
-    console.log("New client connected");
-    ws.send(JSON.stringify({ timeRemaining, isRunning }));
+function startTimer(timer) {
+    if (timers[timer].interval) return; // Prevent duplicate intervals
 
-    ws.on("message", (message) => {
-        const data = JSON.parse(message);
-
-        if (data.action === "toggle") {
-            isRunning = data.isRunning;
-            if (isRunning) {
-                interval = setInterval(() => {
-                    if (timeRemaining > 0) {
-                        timeRemaining--;
-                        broadcast();
-                    } else {
-                        clearInterval(interval);
-                        isRunning = false;
-                        broadcast();
-                    }
-                }, 1000);
-            } else {
-                clearInterval(interval);
-            }
-            broadcast();
-        } 
-        
-        else if (data.action === "reset") {
-            clearInterval(interval);
-            timeRemaining = data.timeRemaining;
-            isRunning = false;
-            broadcast();
+    timers[timer].interval = setInterval(() => {
+        if (timers[timer].timeRemaining > 0) {
+            timers[timer].timeRemaining--;
+        } else {
+            clearInterval(timers[timer].interval);
+            timers[timer].interval = null;
         }
-    });
+        broadcast({ timer, timeRemaining: timers[timer].timeRemaining });
+    }, 1000);
+}
 
-    ws.on("close", () => console.log("Client disconnected"));
-});
+function stopTimer(timer) {
+    clearInterval(timers[timer].interval);
+    timers[timer].interval = null;
+}
 
-function broadcast() {
+function resetTimer(timer) {
+    stopTimer(timer);
+    timers[timer].timeRemaining = 0;
+    broadcast({ timer, timeRemaining: 0 });
+}
+
+function broadcast(data) {
     wss.clients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ timeRemaining, isRunning }));
+            client.send(JSON.stringify(data));
         }
     });
 }
+
+wss.on("connection", (ws) => {
+    console.log("New client connected");
+
+    ws.on("message", (message) => {
+        const data = JSON.parse(message);
+        if (data.action === "start") {
+            timers[data.timer].timeRemaining = data.time;
+            startTimer(data.timer);
+        } else if (data.action === "stop") {
+            stopTimer(data.timer);
+        } else if (data.action === "reset") {
+            resetTimer(data.timer);
+        }
+    });
+
+    ws.on("close", () => {
+        console.log("Client disconnected");
+    });
+});
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
