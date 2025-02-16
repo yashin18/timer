@@ -1,4 +1,4 @@
-const WebSocket = require("ws");
+const WebSocket = require("ws"); 
 const http = require("http");
 
 // Create HTTP server
@@ -8,7 +8,7 @@ const server = http.createServer((req, res) => {
         "Access-Control-Allow-Origin": "*", // Allow all origins
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Content-Security-Policy": "default-src *; connect-src * wss://uf8jmmhk.up.railway.app"
+        "Content-Security-Policy": "default-src *; connect-src * ws: wss:"
     });
     res.end("WebSocket server is running.");
 });
