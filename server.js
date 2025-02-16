@@ -2,7 +2,10 @@ const WebSocket = require("ws");
 const http = require("http");
 
 const server = http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.writeHead(200, {
+        "Content-Type": "text/plain",
+        "Access-Control-Allow-Origin": "*"
+    });
     res.end("WebSocket server is running.");
 });
 
@@ -10,39 +13,38 @@ const wss = new WebSocket.Server({ server });
 
 let timeRemaining = 0;
 let isRunning = false;
-let timerInterval = null;
+let interval = null;
 
 wss.on("connection", (ws) => {
     console.log("New client connected");
-
     ws.send(JSON.stringify({ timeRemaining, isRunning }));
 
     ws.on("message", (message) => {
         const data = JSON.parse(message);
 
-        if (data.command === "startStop") {
+        if (data.action === "toggle") {
             isRunning = data.isRunning;
             if (isRunning) {
-                if (timerInterval) clearInterval(timerInterval);
-                timerInterval = setInterval(() => {
+                interval = setInterval(() => {
                     if (timeRemaining > 0) {
                         timeRemaining--;
                         broadcast();
                     } else {
-                        clearInterval(timerInterval);
+                        clearInterval(interval);
                         isRunning = false;
                         broadcast();
                     }
                 }, 1000);
             } else {
-                clearInterval(timerInterval);
+                clearInterval(interval);
             }
-        }
-
-        if (data.command === "reset") {
+            broadcast();
+        } 
+        
+        else if (data.action === "reset") {
+            clearInterval(interval);
             timeRemaining = data.timeRemaining;
             isRunning = false;
-            clearInterval(timerInterval);
             broadcast();
         }
     });
@@ -58,7 +60,7 @@ function broadcast() {
     });
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
     console.log(`WebSocket server running on port ${PORT}`);
 });
