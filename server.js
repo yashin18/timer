@@ -1,51 +1,64 @@
-// server.js
-const WebSocket = require('ws');
-const http = require('http');
+const WebSocket = require("ws");
+const http = require("http");
 
-// Create a basic HTTP server (needed for WebSocket to work)
 const server = http.createServer((req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('WebSocket server is running.');
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("WebSocket server is running.");
 });
 
-// Create a WebSocket server on top of the HTTP server
 const wss = new WebSocket.Server({ server });
 
-// Variable to store the countdown time
 let timeRemaining = 0;
 let isRunning = false;
+let timerInterval = null;
 
-// Listen for WebSocket connections
-wss.on('connection', (ws) => {
-    console.log('New connection established.');
+wss.on("connection", (ws) => {
+    console.log("New client connected");
 
-    // Send initial state to the client
     ws.send(JSON.stringify({ timeRemaining, isRunning }));
 
-    // Handle incoming messages (e.g., start, stop, reset commands)
-    ws.on('message', (message) => {
+    ws.on("message", (message) => {
         const data = JSON.parse(message);
 
-        // If the message contains a new time or action
-        if (data.action === 'startStop') {
-            isRunning = !isRunning;
-        } else if (data.action === 'reset') {
-            timeRemaining = data.time || 0;
-            isRunning = false;
-        } else if (data.action === 'setTime') {
-            timeRemaining = data.time;
+        if (data.command === "startStop") {
+            isRunning = data.isRunning;
+            if (isRunning) {
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    if (timeRemaining > 0) {
+                        timeRemaining--;
+                        broadcast();
+                    } else {
+                        clearInterval(timerInterval);
+                        isRunning = false;
+                        broadcast();
+                    }
+                }, 1000);
+            } else {
+                clearInterval(timerInterval);
+            }
         }
 
-        // Update all connected clients with the new state
-        wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ timeRemaining, isRunning }));
-            }
-        });
+        if (data.command === "reset") {
+            timeRemaining = data.timeRemaining;
+            isRunning = false;
+            clearInterval(timerInterval);
+            broadcast();
+        }
     });
+
+    ws.on("close", () => console.log("Client disconnected"));
 });
 
-// Start the HTTP server on port 3000
-server.listen(3000, () => {
-    console.log('WebSocket server running on ws://localhost:3000');
+function broadcast() {
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ timeRemaining, isRunning }));
+        }
+    });
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`WebSocket server running on port ${PORT}`);
 });
