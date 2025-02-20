@@ -1,80 +1,82 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timer Control</title>
-    <style>
-        .timer { font-size: 2em; font-weight: bold; }
-        .big-button { font-size: 1.5em; padding: 10px 20px; background-color: blue; color: white; border: none; cursor: pointer; }
-    </style>
-    <script>
-        const ws = new WebSocket("wss://countdown-ws.onrender.com");
+const WebSocket = require("ws");
+const http = require("http");
 
-        let timer1Running = false;
-        let timer1Paused = false;
-        let timer2Running = false;
+const server = http.createServer();
+const wss = new WebSocket.Server({ server });
 
-        ws.onopen = () => console.log("Connected to WebSocket server.");
-        ws.onerror = (err) => console.error("WebSocket Error:", err);
+let timers = {
+    1: { time: 0, running: false, paused: false, interval: null },
+    2: { time: 0, running: false, interval: null }
+};
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.timer === 1) {
-                document.getElementById("displayTimer1").textContent = formatTime(data.time);
-            } else if (data.timer === 2) {
-                document.getElementById("displayTimer2").textContent = formatTime(data.time);
-            }
-        };
+wss.on("connection", (ws) => {
+    console.log("New client connected");
 
-        function formatTime(seconds) {
-            if (isNaN(seconds) || seconds < 0) return "0:00";
-            const min = Math.floor(seconds / 60);
-            const sec = seconds % 60;
-            return `${min}:${sec < 10 ? "0" : ""}${sec}`;
+    ws.on("message", (message) => {
+        const data = JSON.parse(message);
+        const timer = timers[data.timer];
+
+        if (data.action === "start") {
+            clearInterval(timer.interval);
+            timer.time = data.time;
+            timer.running = true;
+            timer.paused = false;
+            startTimer(data.timer);
         }
 
-        function startPauseTimer1() {
-            if (!timer1Running) {
-                let time = parseInt(document.getElementById("timer1Input").value) * 60 || 0;
-                ws.send(JSON.stringify({ action: "start", timer: 1, time }));
-                document.getElementById("startPauseTimer1").textContent = "Pause";
-                timer1Running = true;
-                timer1Paused = false;
-            } else if (!timer1Paused) {
-                ws.send(JSON.stringify({ action: "pause", timer: 1 }));
-                document.getElementById("startPauseTimer1").textContent = "Start";
-                timer1Paused = true;
-            } else {
-                ws.send(JSON.stringify({ action: "resume", timer: 1 }));
-                document.getElementById("startPauseTimer1").textContent = "Pause";
-                timer1Paused = false;
-            }
+        else if (data.action === "pause" && timer.running) {
+            clearInterval(timer.interval);
+            timer.paused = true;
+            timer.running = false;
         }
 
-        function startStopTimer2() {
-            if (!timer2Running) {
-                let time = parseInt(document.getElementById("timer2Input").value) || 0;
-                ws.send(JSON.stringify({ action: "start", timer: 2, time }));
-                document.getElementById("startStopTimer2").textContent = "Stop";
-                timer2Running = true;
-            } else {
-                ws.send(JSON.stringify({ action: "stop", timer: 2 }));
-                document.getElementById("startStopTimer2").textContent = "Start";
-                timer2Running = false;
-            }
+        else if (data.action === "resume" && timer.paused) {
+            timer.running = true;
+            timer.paused = false;
+            startTimer(data.timer);
         }
-    </script>
-</head>
-<body>
-    <h2>Timer 1 (Minutes)</h2>
-    <input type="number" id="timer1Input" placeholder="Enter minutes">
-    <button id="startPauseTimer1" onclick="startPauseTimer1()">Start</button>
-    <div class="timer" id="displayTimer1">0:00</div>
 
-    <h2>Timer 2 (Seconds)</h2>
-    <input type="number" id="timer2Input" placeholder="Enter seconds">
-    <button id="startStopTimer2" class="big-button" onclick="startStopTimer2()">Start</button>
-    <div class="timer" id="displayTimer2">0:00</div>
-</body>
-</html>
+        else if (data.action === "stop") {
+            clearInterval(timer.interval);
+            timer.running = false;
+            timer.time = 0;
+            broadcast(data.timer);
+        }
+
+        else if (data.action === "reset") {
+            clearInterval(timer.interval);
+            timer.running = false;
+            timer.paused = false;
+            timer.time = data.time;
+            broadcast(data.timer);
+        }
+    });
+
+    ws.on("close", () => console.log("Client disconnected"));
+});
+
+function startTimer(timerID) {
+    timers[timerID].interval = setInterval(() => {
+        if (timers[timerID].time > 0) {
+            timers[timerID].time--;
+            broadcast(timerID);
+        } else {
+            clearInterval(timers[timerID].interval);
+            timers[timerID].running = false;
+        }
+    }, 1000);
+}
+
+function broadcast(timerID) {
+    const data = JSON.stringify({ timer: timerID, time: timers[timerID].time });
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(data);
+        }
+    });
+}
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => {
+    console.log(`WebSocket server running on port ${PORT}`);
+});
